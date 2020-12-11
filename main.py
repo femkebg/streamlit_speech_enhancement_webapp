@@ -180,7 +180,7 @@ def present_audio(audio_samples, label, fig, plotting_slot, row):
             shared_xaxes=True,
         )
         fig.update_layout(showlegend=False, height=height)
-        fig.update_yaxes(range=[-1.0, 1.0], title="level")
+        fig.update_yaxes(fixedrange=True, range=[-1.0, 1.0], title="level")
         fig.update_xaxes(title="time [s]")
     time = np.arange(len(audio_samples)) / FS
     fig.append_trace(
