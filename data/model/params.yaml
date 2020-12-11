@@ -1,0 +1,24 @@
+model_param:
+  endecoder_layers:
+    activation: PReLU
+    complex_batch_normalization: true
+  fft:
+    length: 512
+    window_increment: 100
+    window_length: 400
+    window_type: hanning
+  hidden_layers:
+    bidirectional: false
+    complex: false
+    n: 1
+    nodes: 256
+  kernel:
+    num:
+      - 16
+      - 32
+      - 64
+      - 128
+      - 256
+    size: 3
+  masking_mode: E
+  model_type: DCCRN

@@ -1,0 +1,9 @@
+numpy==1.19.4
+plotly==4.14.0
+SoundFile==0.10.3.post1
+torch==1.7.0
+pytorch_lightning==1.0.8
+scipy==1.5.3
+streamlit==0.72.0
+PyYAML==5.3.1
+resampy==0.2.2
