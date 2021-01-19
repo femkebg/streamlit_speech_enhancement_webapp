@@ -143,13 +143,13 @@ class DCCRN(pl.LightningModule):
         return y_pred
 
     @classmethod
-    def load(cls):
+    def load(cls, model_id):
         """Load model and weights"""
         with open(join("data", "model", "params.yaml"), "r") as yamlfile:
             config = yaml.load(yamlfile, Loader=yaml.FullLoader)
 
         return DCCRN.load_from_checkpoint(
-            join("data", "model", "best_model-v0.ckpt"),
+            join("data", "model", "best_model_" + model_id + ".ckpt"),
             model_param=config["model_param"],
         )
 

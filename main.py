@@ -5,7 +5,9 @@ import gc
 
 import streamlit as st
 import torch
+from pesq import pesq
 import numpy as np
+from scipy import signal
 import soundfile as sf
 import resampy
 import plotly.graph_objects as go
@@ -21,7 +23,7 @@ MAX_AUDIO_LENGTH = 9 * FS
 
 def main():
     """Streamlit webapp flow"""
-    # setting up main layout
+    ## setting up main layout
     st.title("Speech Enhancement")
     st.write(
         "This app lets you play around with a DNN speech enhancement model. You can upload your own (noisy) speech file and optionally add (more) noise. Note that the signal to noise ratio (SNR) slider assumes clean speech input."
@@ -29,19 +31,25 @@ def main():
     progress_slot = st.empty()
     plotting_slot = st.empty()
 
-    # setting up sidebar
+    ## setting up sidebar
     st.sidebar.header("Obtain speech")
     uploaded_file = st.sidebar.file_uploader(
         "Use the example, or upload your own file", type="wav"
     )
     audio_trimmed_warning_slot = st.sidebar.empty()
+    reverberant = st.sidebar.checkbox("Make reverberant")
     st.sidebar.header("Add noise")
     snr_slot = st.sidebar.empty()
     noise_file_name_slot = st.sidebar.empty()
+    st.sidebar.header("Other settings")
+    model_id = st.sidebar.radio("Model", ["A", "B"])
+    signal_presentation = st.sidebar.radio("Plot type", ["Time signal", "Spectogram"])
 
-    # load and prepare input
+    ## load and prepare input
     progress_slot.info("Status: generating noisy audio...")
+    # load speech
     if uploaded_file is not None:
+        # load uploaded file
         speech_samples = load_audio(
             uploaded_file, warning_slot=audio_trimmed_warning_slot
         )
@@ -49,10 +57,18 @@ def main():
             "Noise type", get_noises(), index=0
         )
     else:
+        # load speech example file
         speech_samples = load_audio(join("data", "speech", "random_speech_sample.wav"))
         noise_file_name = noise_file_name_slot.radio(
             "Noise type", get_noises(), index=1
         )
+    # make reverberant
+    if reverberant:
+        rir = load_audio(join("data", "rir", "random_rir.wav"))
+        speech_samples = make_reverberant(speech_samples, rir)
+    pesq_score_clean = pesq(FS, speech_samples, speech_samples, "wb")
+
+    # add noise
     noise_samples = load_audio(join("data", "noise", noise_file_name + ".wav"))
     if noise_samples is None:
         snr_slot.empty()
@@ -62,35 +78,65 @@ def main():
             "SNR [dB]", min_value=-5.0, max_value=20.0, value=5.0, step=1.0
         )
     noisy_samples = mix_audio(speech_samples, noise_samples, snr)
+    pesq_score_noisy = pesq(FS, noisy_samples, speech_samples, "wb")
 
-    # show input
+    ## show input
     fig = None
     row = 1
     if noise_samples is not None:
         progress_slot.info("Status: plotting original audio...")
-        fig = present_audio(speech_samples, "original", fig, plotting_slot, row)
+
+        fig = present_audio(
+            speech_samples,
+            "original",
+            fig,
+            plotting_slot,
+            row,
+            signal_presentation,
+            pesq_score_clean,
+        )
         row += 1
     progress_slot.info("Status: plotting input audio...")
-    fig = present_audio(noisy_samples, "input", fig, plotting_slot, row)
+    fig = present_audio(
+        noisy_samples,
+        "input",
+        fig,
+        plotting_slot,
+        row,
+        signal_presentation,
+        pesq_score_noisy,
+    )
     row += 1
 
-    # run model
+    ## run model
     progress_slot.info("Status: loading model...")
-    model = load_model()
+    model = load_model(model_id)
     progress_slot.info("Status: running model on noisy audio...")
     cleaned_samples = run_model(model, noisy_samples)
+    cleaned_samples = (
+        np.max(speech_samples) / np.max(cleaned_samples) * cleaned_samples * -1
+    )
 
-    # show output
+    ## show output
     progress_slot.info("Status: plotting enhanced audio...")
-    fig = present_audio(cleaned_samples, "enhanced", fig, plotting_slot, row)
+    pesq_score_enhanced = pesq(FS, speech_samples, cleaned_samples, "wb")
+    fig = present_audio(
+        cleaned_samples,
+        "enhanced",
+        fig,
+        plotting_slot,
+        row,
+        signal_presentation,
+        pesq_score_enhanced,
+    )
     progress_slot.info("Status: done!")
 
-    # collect garbage
+    ## collect garbage
     gc.collect()
 
-    # add copyright statement
+    ## add copyright statement
     st.markdown(
-        "Copyright &copy; 2020 Femke B. Gelderblom.  [ResearchGate profile](https://www.researchgate.net/profile/Femke_Gelderblom)"
+        "Copyright &copy; 2021 Femke B. Gelderblom.  [ResearchGate profile](https://www.researchgate.net/profile/Femke_Gelderblom)"
     )
 
 
@@ -144,6 +190,16 @@ def mix_audio(speech_samples, noise_samples, desired_snr):
     return speech_samples + np.multiply(noise_samples, scaling_factor)
 
 
+def make_reverberant(speech_samples, rir):
+    """Make speech reverberant"""
+    reverb_speech = signal.fftconvolve(speech_samples, rir * 0.5, mode="full")
+
+    # make reverb_speech same length as clean_speech
+    reverb_speech = reverb_speech[0 : speech_samples.shape[0]]
+
+    return reverb_speech
+
+
 def get_noises():
     "Get list of available noise types"
     # Obtain all files in the noise directory
@@ -155,10 +211,13 @@ def get_noises():
     return file_names_without_ext
 
 
-def present_audio(audio_samples, label, fig, plotting_slot, row):
+def present_audio(
+    audio_samples, label, fig, plotting_slot, row, signal_presentation, pesq_score
+):
     "Show audio player and plot"
     # show audio player
     st.header(label)
+    st.write("pesq: " + str(round(pesq_score, 2)))
     temp_file_name = "temp.wav"
     sf.write(temp_file_name, audio_samples.T, FS)
     st.audio(temp_file_name)
@@ -180,22 +239,40 @@ def present_audio(audio_samples, label, fig, plotting_slot, row):
             shared_xaxes=True,
         )
         fig.update_layout(showlegend=False, height=height)
-        fig.update_yaxes(fixedrange=True, range=[-1.0, 1.0], title="level")
+        if signal_presentation == "Time signal":
+            fig.update_yaxes(fixedrange=True, range=[-1.0, 1.0], title="level")
+        else:
+            fig.update_yaxes(fixedrange=True, title="Frequency Hz")
         fig.update_xaxes(title="time [s]")
     time = np.arange(len(audio_samples)) / FS
-    fig.append_trace(
-        go.Scatter(x=time, y=audio_samples, line=dict(width=1)),
-        row=row,
-        col=1,
-    )
+    if signal_presentation == "Time signal":
+        fig.append_trace(
+            go.Scatter(x=time, y=audio_samples, line=dict(width=1)),
+            row=row,
+            col=1,
+        )
+    else:
+        freqs, bins, Pxx = signal.spectrogram(
+            audio_samples,
+            fs=FS,
+            window="hann",
+            nfft=512,
+        )
+        fig.append_trace(
+            go.Heatmap(
+                x=bins, y=freqs, z=10 * np.log10(Pxx), colorscale="Jet", showscale=False
+            ),
+            row=row,
+            col=1,
+        )
     plotting_slot.plotly_chart(fig, use_container_width=True)
     return fig
 
 
 @st.cache
-def load_model():
+def load_model(model_id):
     """Load pretrained model"""
-    return DCCRN.load()
+    return DCCRN.load(model_id)
 
 
 if __name__ == "__main__":

@@ -7,3 +7,4 @@ scipy==1.5.3
 streamlit==0.72.0
 PyYAML==5.3.1
 resampy==0.2.2
+pesq==0.0.2
