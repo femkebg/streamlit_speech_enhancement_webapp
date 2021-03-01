@@ -1,4 +1,4 @@
-# model updated 20210106_154109 (A) and 20210114_115325 (B)
+# model updated 20210106_154109 (A) and 20210125_084849 (B)
 model_param:
   endecoder_layers:
     activation: PReLU
