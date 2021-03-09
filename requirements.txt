@@ -1,7 +1,7 @@
 numpy==1.20.1
 plotly==4.14.0
 SoundFile==0.10.3.post1
---find-links https://download.pytorch.org/whl/torch_stable.html torch==1.7.0+cpu
+--find-links https://download.pytorch.org/whl/torch_stable.html torch==1.7.1+cpu
 pytorch_lightning==1.0.8
 scipy==1.5.3
 streamlit==0.72.0
